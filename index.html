@@ -444,6 +444,64 @@
             align-items: center;
         }
 
+        /* 音量控制 */
+        .volume-card {
+            grid-column: 1 / -1;
+        }
+
+        .volume-control {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .volume-slider {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100px;
+            height: 5px;
+            border-radius: 3px;
+            background: linear-gradient(to right, var(--color-green) 0%, var(--color-green) 80%, #334155 80%, #334155 100%);
+            outline: none;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .volume-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--color-gold);
+            box-shadow: 0 0 6px var(--color-gold-glow);
+            cursor: pointer;
+            transition: transform 0.15s ease;
+        }
+
+        .volume-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.3);
+        }
+
+        .volume-slider::-moz-range-thumb {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--color-gold);
+            box-shadow: 0 0 6px var(--color-gold-glow);
+            cursor: pointer;
+            border: none;
+        }
+
+        .volume-value {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            min-width: 36px;
+            text-align: right;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
         .switch {
             position: relative;
             display: inline-block;
@@ -818,6 +876,14 @@
                         <span class="slider"></span>
                     </label>
                 </div>
+                <!-- 音量调节 -->
+                <div class="settings-card volume-card">
+                    <span style="font-size: 0.85rem;">🔉 语音播报音量</span>
+                    <div class="volume-control">
+                        <input type="range" id="tts-volume-slider" min="0" max="100" value="80" class="volume-slider">
+                        <span id="tts-volume-value" class="volume-value">80%</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -851,6 +917,7 @@ let state = {
     startingChips: 10000,
     audioAlert: true,
     voiceAlert: true,
+    voiceVolume: 0.8,   // 语音播报音量 0.0 ~ 1.0
     isEditingTable: false,
     structure: [
         { id: 1, sb: 100, bb: 200, ante: 200, duration: 15, isBreak: false },
@@ -958,7 +1025,7 @@ function renderTimer() {
 
     if (cur.isBreak) {
         document.getElementById('active-level-label').innerText = '\u2615 COFFEE BREAK';
-        document.getElementById('blinds-main-text').innerText = '中场休息';
+        document.getById('blinds-main-text').innerText = '中场休息';
         document.getElementById('ante-main-text').style.display = 'none';
         timerEl.classList.add('break-mode');
     } else {
@@ -1305,15 +1372,22 @@ function levelUp() {
 
         if (state.voiceAlert && ('speechSynthesis' in window)) {
             const cur = state.structure[state.currentLevelIndex];
-            let text = '升盲，';
+            let text = '';
             if (cur.isBreak) {
-                text += '进入中场休息';
+                text = '升盲，进入中场休息时间';
             } else {
-                text += `进入级别${cur.id}，小盲${cur.sb}，大盲${cur.bb}`;
+                // 播报级别调整的具体信息：级别数、小盲、大盲
+                text = `盲注级别已调整至第${cur.id}级，小盲${cur.sb}，大盲${cur.bb}`;
+                // 如果有前注也播报
+                if (cur.ante > 0) {
+                    text += `，前注${cur.ante}`;
+                }
             }
             const utter = new SpeechSynthesisUtterance(text);
             utter.lang = 'zh-CN';
-            utter.rate = 1.1;
+            utter.rate = 1.05;
+            // 应用音量设置
+            utter.volume = Math.max(0, Math.min(1, state.voiceVolume || 0.8));
             window.speechSynthesis.speak(utter);
         }
 
@@ -1512,6 +1586,32 @@ function registerDOMEvents() {
     // 同步开关状态
     document.getElementById('setting-buzzer').checked = state.audioAlert;
     document.getElementById('setting-tts').checked = state.voiceAlert;
+
+    // 音量滑块事件绑定
+    const volumeSlider = document.getElementById('tts-volume-slider');
+    const volumeValue = document.getElementById('tts-volume-value');
+
+    // 初始化音量显示
+    const savedVol = Math.round((state.voiceVolume || 0.8) * 100);
+    volumeSlider.value = savedVol;
+    volumeValue.innerText = savedVol + '%';
+    updateVolumeSliderGradient(savedVol);
+
+    volumeSlider.addEventListener('input', (e) => {
+        const vol = parseInt(e.target.value);
+        state.voiceVolume = vol / 100;
+        volumeValue.innerText = vol + '%';
+        updateVolumeSliderGradient(vol);
+        saveState();
+    });
+}
+
+// 更新音量滑块背景渐变
+function updateVolumeSliderGradient(value) {
+    const slider = document.getElementById('tts-volume-slider');
+    const percent = value;
+    const activeColor = percent > 0 ? 'var(--color-green)' : '#334155';
+    slider.style.background = `linear-gradient(to right, ${activeColor} 0%, ${activeColor} ${percent}%, #334155 ${percent}%, #334155 100%)`;
 }
 </script>
 
