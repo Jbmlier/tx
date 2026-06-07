@@ -934,19 +934,19 @@ let clickTimer = null; // 用于区分单击和双击
 
 const PRESETS = {
         regular: [
-            { id: 1, sb: 100, bb: 200, ante: 0, duration: 7, isBreak: false },
-            { id: 2, sb: 200, bb: 400, ante: 0, duration: 7, isBreak: false },
-            { id: 3, sb: 300, bb: 600, ante: 0, duration: 7, isBreak: false },
-            { id: 4, sb: 400, bb: 800, ante: 0, duration: 7, isBreak: false },
-            { id: 5, sb: 600, bb: 1200, ante: 0, duration: 7, isBreak: false },
- 	    { id: 6, sb: 800, bb: 1600, ante: 0, duration: 7, isBreak: false },
-	    { id: 7, sb: 1000, bb: 2000, ante: 0, duration: 7, isBreak: false },
- 	    { id: 8, sb: 1500, bb: 3000, ante: 0, duration: 7, isBreak: false },
-	    { id: 9, sb: 2000, bb: 4000, ante: 0, duration: 7, isBreak: false },
- 	    { id: 10, sb: 4000, bb: 8000, ante: 0, duration: 7, isBreak: false },
-	    { id: 11, sb: 8000, bb: 16000, ante: 0, duration: 7, isBreak: false },
-	    { id: 12, sb: 15000, bb: 30000, ante: 0, duration: 7, isBreak: false },
-	    { id: 13, sb: 30000, bb: 60000, ante: 0, duration: 7, isBreak: false },
+            { id: 1, sb: 100, bb: 200, ante: 0, duration: 12, isBreak: false },
+            { id: 2, sb: 200, bb: 400, ante: 0, duration: 12, isBreak: false },
+            { id: 3, sb: 400, bb: 800, ante: 0, duration: 12, isBreak: false },
+            { id: 4, sb: 600, bb: 1200, ante: 0, duration: 10, isBreak: false },
+ 	    { id: 5, sb: 800, bb: 1600, ante: 0, duration: 10, isBreak: false },
+	    { id: 6, sb: 1000, bb: 2000, ante: 0, duration: 8, isBreak: false },
+            { id: '休息更换筹码', sb: 0, bb: 0, ante: 0, duration: 3, isBreak: false }
+	    { id: 7, sb: 2000, bb: 4000, ante: 0, duration: 8, isBreak: false },
+ 	    { id: 8, sb: 4000, bb: 8000, ante: 0, duration: 6, isBreak: false },
+	    { id: 9, sb: 8000, bb: 16000, ante: 0, duration: 6, isBreak: false },
+	    { id: 10, sb: 15000, bb: 30000, ante: 0, duration: 6, isBreak: false },
+	    { id: 11, sb: 30000, bb: 60000, ante: 0, duration: 6, isBreak: false },
+            { id: 12, sb: 60000, bb: 120000, ante: 0, duration: 6, isBreak: false },
             { id: '休息', sb: 0, bb: 0, ante: 0, duration: 5, isBreak: true }
         ],
         turbo: [
@@ -958,19 +958,19 @@ const PRESETS = {
             { id: 5, sb: 800, bb: 1600, ante: 1600, duration: 8, isBreak: false }
         ],
         deep: [
-            { id: 1, sb: 100, bb: 200, ante: 0, duration: 9, isBreak: false },
-            { id: 2, sb: 200, bb: 400, ante: 0, duration: 9, isBreak: false },
-            { id: 3, sb: 400, bb: 800, ante: 0, duration: 9, isBreak: false },
-            { id: 4, sb: 600, bb: 1200, ante: 0, duration: 9, isBreak: false },
-            { id: 5, sb: 800, bb: 1600, ante: 0, duration: 9, isBreak: false },
- 	    { id: 6, sb: 1000, bb: 1000, ante: 0, duration: 5, isBreak: false },
-	    { id: 7, sb: 1500, bb: 3000, ante: 0, duration: 5, isBreak: false },
- 	    { id: 8, sb: 2000, bb: 4000, ante: 0, duration: 5, isBreak: false },
-	    { id: 9, sb: 4000, bb: 8000, ante: 0, duration: 5, isBreak: false },
- 	    { id: 10, sb: 8000, bb: 16000, ante: 0, duration: 5, isBreak: false },
-	    { id: 11, sb: 15000, bb: 30000, ante: 0, duration: 5, isBreak: false },
-	    { id: 12, sb: 30000, bb: 60000, ante: 0, duration: 5, isBreak: false },
-	    { id: 13, sb: 60000, bb: 120000, ante: 0, duration: 5, isBreak: false },
+            { id: 1, sb: 100, bb: 200, ante: 0, duration: 12, isBreak: false },
+            { id: 2, sb: 200, bb: 400, ante: 0, duration: 12, isBreak: false },
+            { id: 3, sb: 400, bb: 800, ante: 0, duration: 12, isBreak: false },
+            { id: 4, sb: 600, bb: 1200, ante: 0, duration: 10, isBreak: false },
+ 	    { id: 5, sb: 800, bb: 1600, ante: 0, duration: 10, isBreak: false },
+	    { id: 6, sb: 1000, bb: 2000, ante: 0, duration: 8, isBreak: false },
+            { id: '休息更换筹码', sb: 0, bb: 0, ante: 0, duration: 3, isBreak: false }
+	    { id: 7, sb: 2000, bb: 4000, ante: 0, duration: 8, isBreak: false },
+ 	    { id: 8, sb: 4000, bb: 8000, ante: 0, duration: 6, isBreak: false },
+	    { id: 9, sb: 8000, bb: 16000, ante: 0, duration: 6, isBreak: false },
+	    { id: 10, sb: 15000, bb: 30000, ante: 0, duration: 6, isBreak: false },
+	    { id: 11, sb: 30000, bb: 60000, ante: 0, duration: 6, isBreak: false },
+            { id: 12, sb: 60000, bb: 120000, ante: 0, duration: 6, isBreak: false },
             { id: '休息', sb: 0, bb: 0, ante: 0, duration: 5, isBreak: true }
 
         ]
