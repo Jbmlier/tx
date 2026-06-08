@@ -957,6 +957,10 @@
                         <span>🔊</span> 测试语音播报
                     </button>
                 </div>
+                <!-- TTS 引擎状态显示 -->
+                <div class="settings-card volume-card" style="padding: 0.3rem 1rem; background: rgba(0,0,0,0.2);">
+                    <span id="tts-status-text" style="font-size: 0.75rem; color: var(--text-dim); width: 100%; text-align: center;">检测语音引擎中...</span>
+                </div>
             </div>
         </div>
     </div>
@@ -1092,15 +1096,14 @@ window.addEventListener('DOMContentLoaded', () => {
         if (tip) tip.style.display = 'flex';
     }
 
-    // 预加载语音列表（某些浏览器需要异步加载）
-    if ('speechSynthesis' in window) {
-        window.speechSynthesis.getVoices();
-        // Chrome 需要等待 voiceschanged 事件
-        if (window.speechSynthesis.onvoiceschanged !== undefined) {
-            window.speechSynthesis.onvoiceschanged = () => {
-                window.speechSynthesis.getVoices();
-            };
-        }
+    // 预加载 TTS 语音引擎（Android Chrome 必须提前初始化）
+    TTS.init();
+
+    // Android Chrome: onvoiceschanged 事件需要正确绑定
+    if ('speechSynthesis' in window && window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = () => {
+            TTS.init();
+        };
     }
 });
 
@@ -1656,16 +1659,29 @@ function unlockAudio() {
     // 2. 解锁 SpeechSynthesis（用于中文语音播报）
     if ('speechSynthesis' in window) {
         try {
-            // 取消所有待播报的内容
-            window.speechSynthesis.cancel();
+            // 初始化 TTS 引擎（预加载语音列表）
+            TTS.init();
+
             // 发送一个极短的静默语音来初始化引擎
-            const silentUtter = new SpeechSynthesisUtterance('');
-            silentUtter.volume = 0.001;
-            silentUtter.rate = 10;
-            window.speechSynthesis.speak(silentUtter);
-            // 预加载语音列表（某些浏览器需要）
-            if (window.speechSynthesis.getVoices) {
-                window.speechSynthesis.getVoices();
+            // Android Chrome 需要在用户手势中同步调用一次 speak 来激活
+            const unlockUtter = new SpeechSynthesisUtterance('.');
+            unlockUtter.volume = 0.001;
+            unlockUtter.rate = 10;
+            unlockUtter.lang = 'zh-CN';
+            window.speechSynthesis.speak(unlockUtter);
+            TTS.resumeIfPaused();
+
+            // 预加载语音列表并尝试缓存中文语音
+            const voices = window.speechSynthesis.getVoices();
+            if (voices && voices.length > 0) {
+                const zhVoice = voices.find(v => v.lang === 'zh-CN' || v.lang === 'zh_CN') ||
+                                voices.find(v => v.lang && v.lang.startsWith('zh'));
+                if (zhVoice) TTS.cachedVoice = zhVoice;
+                TTS.ready = true;
+            } else {
+                // Android Chrome: 语音列表异步加载，稍后重试
+                setTimeout(() => TTS.init(), 300);
+                setTimeout(() => TTS.init(), 1000);
             }
             unlocked = true;
         } catch(e) {
@@ -1685,33 +1701,137 @@ function unlockAudio() {
 }
 
 /**
- * 在用户交互回调中包装语音播报，确保移动端能正常发声
+ * TTS 语音引擎管理器（兼容 iOS Safari 和 Android Chrome）
+ */
+const TTS = {
+    // 缓存的中文语音
+    cachedVoice: null,
+    // 语音是否已就绪
+    ready: false,
+
+    /**
+     * 预加载并缓存可用的中文语音
+     * Android Chrome 的语音列表是异步加载的，必须等待 voiceschanged 事件
+     */
+    init() {
+        if (!('speechSynthesis' in window)) return;
+
+        const loadVoices = () => {
+            const voices = window.speechSynthesis.getVoices();
+            if (voices && voices.length > 0) {
+                // 优先选择中文语音（按质量排序）
+                const zhVoice = voices.find(v => v.lang === 'zh-CN' || v.lang === 'zh_CN') ||
+                                voices.find(v => v.lang && v.lang.startsWith('zh'));
+                if (zhVoice) {
+                    this.cachedVoice = zhVoice;
+                    this.ready = true;
+                    console.log('TTS 语音已就绪:', zhVoice.name, zhVoice.lang);
+                }
+            }
+        };
+
+        // 立即尝试（某些浏览器已缓存）
+        loadVoices();
+
+        // Android Chrome 必须监听此事件才能获取语音列表
+        window.speechSynthesis.onvoiceschanged = () => {
+            loadVoices();
+            this.ready = true;
+        };
+
+        // 再次尝试（兜底）
+        if (!this.ready) {
+            setTimeout(loadVoices, 500);
+            setTimeout(loadVoices, 1500);
+        }
+    },
+
+    /**
+     * 检查 TTS 是否真正可用
+     */
+    isAvailable() {
+        if (!('speechSynthesis' in window)) return false;
+        const voices = window.speechSynthesis.getVoices();
+        return voices && voices.length > 0;
+    },
+
+    /**
+     * 获取 TTS 状态信息（用于调试和显示）
+     */
+    getStatus() {
+        if (!('speechSynthesis' in window)) return '不支持';
+        const voices = window.speechSynthesis.getVoices();
+        const zhVoices = voices ? voices.filter(v => v.lang && v.lang.startsWith('zh')) : [];
+        const allCount = voices ? voices.length : 0;
+        return `语音${allCount}个/中文${zhVoices.length}个${this.cachedVoice ? '/已缓存' : '/未缓存'}`;
+    },
+
+    /**
+     * Android Chrome 修复：引擎可能在 speak 后自动暂停，需要定时 resume
+     */
+    resumeIfPaused() {
+        if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+        }
+    },
+
+    /**
+     * 核心播报函数（兼容 iOS Safari 和 Android Chrome）
+     */
+    speak(text, volume) {
+        if (!('speechSynthesis' in window)) return;
+
+        const doSpeak = () => {
+            // Android Chrome 修复：如果引擎暂停了，先恢复
+            this.resumeIfPaused();
+
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.lang = 'zh-CN';
+            utter.rate = 1.05;
+            utter.volume = Math.max(0, Math.min(1, volume || state.voiceVolume || 0.8));
+            utter.pitch = 1.0;
+
+            // 使用缓存的中文语音（如果有）
+            if (this.cachedVoice) {
+                utter.voice = this.cachedVoice;
+            }
+
+            // Android Chrome 修复：在 utterance 事件中也 resume
+            utter.onstart = () => {
+                this.resumeIfPaused();
+            };
+            utter.onerror = (e) => {
+                console.warn('语音播报错误:', e.error, e);
+                // 如果是 interrupted 或 canceled，这是正常的 cancel 导致
+                if (e.error === 'interrupted' || e.error === 'canceled') return;
+            };
+
+            // 关键：某些浏览器需要先 resume 再 speak
+            this.resumeIfPaused();
+            window.speechSynthesis.speak(utter);
+
+            // Android Chrome 修复：speak 后再 resume 一次
+            setTimeout(() => this.resumeIfPaused(), 50);
+            setTimeout(() => this.resumeIfPaused(), 200);
+        };
+
+        // Android 修复：cancel 后需要短暂延迟才能 speak，否则会静默失败
+        // 先尝试温和的取消（只清空队列，不打断当前）
+        try {
+            window.speechSynthesis.cancel();
+        } catch(e) {}
+
+        // 使用 50ms 延迟避免 Android Chrome 的竞态问题
+        setTimeout(doSpeak, 50);
+    }
+};
+
+/**
+ * 兼容性封装：调用 TTS.speak
  */
 function speakWithUnlock(text, volume) {
     if (!('speechSynthesis' in window)) return;
-
-    // 取消之前的播报，避免队列堆积
-    window.speechSynthesis.cancel();
-
-    const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'zh-CN';
-    utter.rate = 1.05;
-    utter.volume = Math.max(0, Math.min(1, volume || state.voiceVolume || 0.8));
-
-    // iOS Safari: 某些版本需要在 speak 前先 getVoices
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length > 0) {
-        // 优先选择中文语音
-        const zhVoice = voices.find(v => v.lang && v.lang.startsWith('zh'));
-        if (zhVoice) utter.voice = zhVoice;
-    }
-
-    // 错误处理
-    utter.onerror = (e) => {
-        console.warn('语音播报错误:', e.error);
-    };
-
-    window.speechSynthesis.speak(utter);
+    TTS.speak(text, volume);
 }
 
 // ==========================================
@@ -1819,8 +1939,34 @@ function registerDOMEvents() {
     if (testBtn) {
         testBtn.addEventListener('click', () => {
             unlockAudio();
+
+            // 先检查 TTS 是否真的可用
+            if (!('speechSynthesis' in window)) {
+                showToast('❌ 您的浏览器不支持语音播报');
+                return;
+            }
+
+            // 获取语音数量状态
+            const voices = window.speechSynthesis.getVoices();
+            const zhVoices = voices ? voices.filter(v => v.lang && v.lang.startsWith('zh')) : [];
+            const allCount = voices ? voices.length : 0;
+
+            if (allCount === 0) {
+                // Android Chrome 常见：语音列表尚未加载
+                showToast('⏳ 语音引擎加载中，请稍后再试...');
+                // 强制重新初始化
+                TTS.init();
+                setTimeout(() => TTS.init(), 500);
+                return;
+            }
+
+            if (zhVoices.length === 0) {
+                showToast(`⚠️ 找到${allCount}个语音但没有中文语音，尝试使用默认语音`);
+            } else {
+                showToast(`🔊 找到${allCount}个语音/中文${zhVoices.length}个，测试中...`);
+            }
+
             speakWithUnlock('语音测试，盲注级别已调整至第5级，小盲一千，大盲两千，前注两千');
-            showToast('🔊 语音测试中...');
         });
     }
 
@@ -1833,6 +1979,9 @@ function registerDOMEvents() {
 
     // 显示/隐藏音频解锁提示
     updateAudioUnlockTip();
+
+    // 检测并显示 TTS 引擎状态
+    updateTTSStatus();
 }
 
 // 更新音频解锁提示的显示状态
@@ -1841,6 +1990,53 @@ function updateAudioUnlockTip() {
     if (!tip) return;
     if (state.audioUnlocked) {
         tip.style.display = 'none';
+    }
+}
+
+/**
+ * 检测并显示 TTS 引擎当前状态（用于排查语音不播报的问题）
+ */
+function updateTTSStatus() {
+    const statusEl = document.getElementById('tts-status-text');
+    if (!statusEl) return;
+
+    const checkStatus = () => {
+        if (!('speechSynthesis' in window)) {
+            statusEl.innerText = '❌ 浏览器不支持语音合成';
+            statusEl.style.color = 'var(--color-red)';
+            return;
+        }
+
+        const voices = window.speechSynthesis.getVoices();
+        const allCount = voices ? voices.length : 0;
+        const zhVoices = voices ? voices.filter(v => v.lang && v.lang.startsWith('zh')) : [];
+
+        if (allCount === 0) {
+            statusEl.innerText = '⏳ 语音引擎加载中，请点击"测试语音播报"激活';
+            statusEl.style.color = 'var(--text-muted)';
+        } else if (zhVoices.length === 0) {
+            statusEl.innerText = `⚠️ 找到${allCount}个语音，无中文语音（播报可能异常）`;
+            statusEl.style.color = 'var(--color-red)';
+        } else {
+            const cached = TTS.cachedVoice ? `已就绪` : `未缓存`;
+            statusEl.innerText = `✅ 语音引擎正常 | ${allCount}个语音 | 中文${zhVoices.length}个 | ${cached}`;
+            statusEl.style.color = 'var(--color-green)';
+        }
+    };
+
+    // 立即检测一次
+    checkStatus();
+    // Android Chrome: 语音列表可能延迟加载，多次检测
+    setTimeout(checkStatus, 1000);
+    setTimeout(checkStatus, 3000);
+
+    // 监听语音列表变化
+    if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        const originalHandler = window.speechSynthesis.onvoiceschanged;
+        window.speechSynthesis.onvoiceschanged = () => {
+            if (originalHandler) originalHandler();
+            checkStatus();
+        };
     }
 }
 
