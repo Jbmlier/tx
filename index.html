@@ -719,6 +719,66 @@
         body {
             padding-bottom: 2.5rem;
         }
+
+        /* ===== 移动端音频解锁提示 ===== */
+        .audio-unlock-tip {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 0.5rem 1rem;
+            background: linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(251, 191, 36, 0.05));
+            border-bottom: 1px solid rgba(251, 191, 36, 0.25);
+            color: var(--color-gold);
+            font-size: 0.8rem;
+            font-weight: 600;
+            z-index: 99;
+            flex-wrap: wrap;
+        }
+
+        .audio-unlock-icon {
+            font-size: 1.1rem;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.6; transform: scale(1.1); }
+        }
+
+        .audio-unlock-btn {
+            background: rgba(251, 191, 36, 0.2);
+            border: 1px solid var(--color-gold);
+            color: var(--color-gold);
+            border-radius: 0.5rem;
+            padding: 0.3rem 0.8rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .audio-unlock-btn:hover {
+            background: rgba(251, 191, 36, 0.35);
+            box-shadow: 0 0 12px var(--color-gold-glow);
+        }
+
+        .audio-unlock-btn:active {
+            transform: scale(0.95);
+        }
+
+        @media (max-width: 640px) {
+            .audio-unlock-tip {
+                gap: 0.4rem;
+                padding: 0.4rem 0.75rem;
+                font-size: 0.75rem;
+            }
+            .audio-unlock-text {
+                line-height: 1.3;
+                text-align: center;
+            }
+        }
     </style>
 <base target="_blank">
 <base target="_blank">
@@ -739,6 +799,13 @@
             </button>
         </div>
     </header>
+
+    <!-- 移动端音频解锁提示 -->
+    <div id="audio-unlock-tip" class="audio-unlock-tip" style="display: none;">
+        <span class="audio-unlock-icon">🔊</span>
+        <span class="audio-unlock-text">点击页面任意位置启用语音播报（移动端浏览器要求）</span>
+        <button class="audio-unlock-btn" onclick="unlockAudio(); showToast('✅ 语音已启用');">点击启用</button>
+    </div>
 
     <div class="container">
         <!-- 左侧 -->
@@ -884,6 +951,12 @@
                         <span id="tts-volume-value" class="volume-value">80%</span>
                     </div>
                 </div>
+                <!-- 语音测试按钮 -->
+                <div class="settings-card volume-card" style="justify-content: center; padding: 0.4rem 1rem;">
+                    <button id="tts-test-btn" class="btn" style="font-size: 0.8rem; width: 100%; justify-content: center; gap: 0.4rem; background: rgba(251,191,36,0.08); border-color: rgba(251,191,36,0.2);">
+                        <span>🔊</span> 测试语音播报
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -919,6 +992,8 @@ let state = {
     voiceAlert: true,
     voiceVolume: 0.8,   // 语音播报音量 0.0 ~ 1.0
     isEditingTable: false,
+    // 音频解锁状态（移动端需要用户交互后才能播放音频/语音）
+    audioUnlocked: false,
     structure: [
         { id: 1, sb: 100, bb: 200, ante: 200, duration: 15, isBreak: false },
         { id: 2, sb: 200, bb: 400, ante: 400, duration: 15, isBreak: false },
@@ -931,6 +1006,20 @@ let state = {
 
 let timerInterval = null;
 let clickTimer = null; // 用于区分单击和双击
+
+// 共享的 AudioContext（移动端复用同一实例，避免多次创建）
+let sharedAudioCtx = null;
+
+function getSharedAudioContext() {
+    if (!sharedAudioCtx) {
+        sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    // 如果上下文被挂起（移动端常见），尝试恢复
+    if (sharedAudioCtx.state === 'suspended') {
+        sharedAudioCtx.resume();
+    }
+    return sharedAudioCtx;
+}
 
 const PRESETS = {
         regular: [
@@ -995,6 +1084,24 @@ window.addEventListener('DOMContentLoaded', () => {
 
     renderAll();
     registerDOMEvents();
+
+    // 检测是否为触摸设备，决定是否需要显示音频解锁提示
+    const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    if (isTouchDevice && !state.audioUnlocked) {
+        const tip = document.getElementById('audio-unlock-tip');
+        if (tip) tip.style.display = 'flex';
+    }
+
+    // 预加载语音列表（某些浏览器需要异步加载）
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.getVoices();
+        // Chrome 需要等待 voiceschanged 事件
+        if (window.speechSynthesis.onvoiceschanged !== undefined) {
+            window.speechSynthesis.onvoiceschanged = () => {
+                window.speechSynthesis.getVoices();
+            };
+        }
+    }
 });
 
 // ==========================================
@@ -1025,7 +1132,7 @@ function renderTimer() {
 
     if (cur.isBreak) {
         document.getElementById('active-level-label').innerText = '\u2615 COFFEE BREAK';
-        document.getById('blinds-main-text').innerText = '中场休息';
+        document.getElementById('blinds-main-text').innerText = '中场休息';
         document.getElementById('ante-main-text').style.display = 'none';
         timerEl.classList.add('break-mode');
     } else {
@@ -1259,7 +1366,7 @@ window.quickGenerator = function() {
 
 // 明显的升盲警报：连续5声高低频交替蜂鸣，类似比赛铃声
 function playLevelUpAlarm() {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = getSharedAudioContext();
     const now = ctx.currentTime;
 
     // 创建5声警报序列：滴-滴-滴-滴-滴（频率递增）
@@ -1300,7 +1407,7 @@ function playLevelUpAlarm() {
 
 // 最后10秒倒计时滴答声
 function playTickSound() {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = getSharedAudioContext();
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
@@ -1342,7 +1449,10 @@ function startTimer() {
 
             // 最后10秒预警：每秒滴声 + 视觉脉冲
             if (state.remainingSeconds <= 10 && state.remainingSeconds > 0) {
-                try { playTickSound(); } catch(e) {}
+                try {
+                    unlockAudio(); // 移动端需要
+                    playTickSound();
+                } catch(e) {}
             }
 
             // 最后3秒加强提示
@@ -1364,31 +1474,28 @@ function levelUp() {
         state.currentLevelIndex++;
         state.remainingSeconds = state.structure[state.currentLevelIndex].duration * 60;
 
+        // 确保音频已解锁（移动端需要）
+        unlockAudio();
+
         if (state.audioAlert) {
             try {
                 playLevelUpAlarm();
             } catch(e) {}
         }
 
+        // 语音播报（使用封装函数，确保移动端兼容性）
         if (state.voiceAlert && ('speechSynthesis' in window)) {
             const cur = state.structure[state.currentLevelIndex];
             let text = '';
             if (cur.isBreak) {
                 text = '升盲，进入中场休息时间';
             } else {
-                // 播报级别调整的具体信息：级别数、小盲、大盲
                 text = `盲注级别已调整至第${cur.id}级，小盲${cur.sb}，大盲${cur.bb}`;
-                // 如果有前注也播报
                 if (cur.ante > 0) {
                     text += `，前注${cur.ante}`;
                 }
             }
-            const utter = new SpeechSynthesisUtterance(text);
-            utter.lang = 'zh-CN';
-            utter.rate = 1.05;
-            // 应用音量设置
-            utter.volume = Math.max(0, Math.min(1, state.voiceVolume || 0.8));
-            window.speechSynthesis.speak(utter);
+            speakWithUnlock(text);
         }
 
         triggerLevelUpVisuals();
@@ -1518,15 +1625,109 @@ function saveState() {
 }
 
 // ==========================================
+// 8.5 移动端音频/语音解锁
+// ==========================================
+
+/**
+ * 解锁音频上下文和语音合成（移动端浏览器需要用户手势后才能播放音频）
+ * 必须在用户点击/触摸事件的处理函数中同步调用
+ */
+function unlockAudio() {
+    if (state.audioUnlocked) return true;
+
+    let unlocked = false;
+
+    // 1. 解锁 Web Audio API（用于蜂鸣声和滴答声）
+    try {
+        const ctx = getSharedAudioContext();
+        // iOS Safari 需要一个实际的发声来解锁
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        gain.gain.value = 0.001; // 几乎静音
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.001);
+        unlocked = true;
+    } catch(e) {
+        console.warn('AudioContext 解锁失败:', e);
+    }
+
+    // 2. 解锁 SpeechSynthesis（用于中文语音播报）
+    if ('speechSynthesis' in window) {
+        try {
+            // 取消所有待播报的内容
+            window.speechSynthesis.cancel();
+            // 发送一个极短的静默语音来初始化引擎
+            const silentUtter = new SpeechSynthesisUtterance('');
+            silentUtter.volume = 0.001;
+            silentUtter.rate = 10;
+            window.speechSynthesis.speak(silentUtter);
+            // 预加载语音列表（某些浏览器需要）
+            if (window.speechSynthesis.getVoices) {
+                window.speechSynthesis.getVoices();
+            }
+            unlocked = true;
+        } catch(e) {
+            console.warn('SpeechSynthesis 解锁失败:', e);
+        }
+    }
+
+    if (unlocked) {
+        state.audioUnlocked = true;
+        saveState();
+        // 移除未解锁提示
+        const tip = document.getElementById('audio-unlock-tip');
+        if (tip) tip.style.display = 'none';
+    }
+
+    return unlocked;
+}
+
+/**
+ * 在用户交互回调中包装语音播报，确保移动端能正常发声
+ */
+function speakWithUnlock(text, volume) {
+    if (!('speechSynthesis' in window)) return;
+
+    // 取消之前的播报，避免队列堆积
+    window.speechSynthesis.cancel();
+
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'zh-CN';
+    utter.rate = 1.05;
+    utter.volume = Math.max(0, Math.min(1, volume || state.voiceVolume || 0.8));
+
+    // iOS Safari: 某些版本需要在 speak 前先 getVoices
+    const voices = window.speechSynthesis.getVoices();
+    if (voices && voices.length > 0) {
+        // 优先选择中文语音
+        const zhVoice = voices.find(v => v.lang && v.lang.startsWith('zh'));
+        if (zhVoice) utter.voice = zhVoice;
+    }
+
+    // 错误处理
+    utter.onerror = (e) => {
+        console.warn('语音播报错误:', e.error);
+    };
+
+    window.speechSynthesis.speak(utter);
+}
+
+// ==========================================
 // 9. 事件绑定
 // ==========================================
 function registerDOMEvents() {
-    // 播放/暂停按钮
-    document.getElementById('play-pause-btn').addEventListener('click', togglePlayPause);
+    // ===== 播放/暂停按钮 =====
+    document.getElementById('play-pause-btn').addEventListener('click', () => {
+        unlockAudio(); // 首次点击解锁音频（移动端必须）
+        togglePlayPause();
+    });
 
-    // 修复：倒计时区域 - 智能区分单击和双击
+    // ===== 修复：倒计时区域 - 智能区分单击和双击 =====
     const timerDisplay = document.getElementById('timer-display');
     timerDisplay.addEventListener('click', () => {
+        unlockAudio(); // 首次点击解锁音频（移动端必须）
         if (clickTimer) {
             // 短时间内第二次点击 = 双击
             clearTimeout(clickTimer);
@@ -1541,12 +1742,19 @@ function registerDOMEvents() {
         }
     });
 
-    // 上一级别 / 下一级别
-    document.getElementById('prev-level-btn').addEventListener('click', prevLevel);
-    document.getElementById('next-level-btn').addEventListener('click', nextLevel);
+    // ===== 上一级别 / 下一级别 =====
+    document.getElementById('prev-level-btn').addEventListener('click', () => {
+        unlockAudio();
+        prevLevel();
+    });
+    document.getElementById('next-level-btn').addEventListener('click', () => {
+        unlockAudio();
+        nextLevel();
+    });
 
-    // 全屏
+    // ===== 全屏 =====
     document.getElementById('fullscreen-btn').addEventListener('click', () => {
+        unlockAudio();
         if (!document.fullscreenElement) {
             document.documentElement.requestFullscreen().catch(() => {});
         } else {
@@ -1554,7 +1762,7 @@ function registerDOMEvents() {
         }
     });
 
-    // 重置
+    // ===== 重置 =====
     document.getElementById('reset-btn').addEventListener('click', () => {
         if (!confirm('确定要重置计时和选手数据吗？')) return;
         state.isPlaying = false;
@@ -1587,7 +1795,7 @@ function registerDOMEvents() {
     document.getElementById('setting-buzzer').checked = state.audioAlert;
     document.getElementById('setting-tts').checked = state.voiceAlert;
 
-    // 音量滑块事件绑定
+    // ===== 音量滑块事件绑定 =====
     const volumeSlider = document.getElementById('tts-volume-slider');
     const volumeValue = document.getElementById('tts-volume-value');
 
@@ -1598,12 +1806,42 @@ function registerDOMEvents() {
     updateVolumeSliderGradient(savedVol);
 
     volumeSlider.addEventListener('input', (e) => {
+        unlockAudio(); // 滑动时也解锁
         const vol = parseInt(e.target.value);
         state.voiceVolume = vol / 100;
         volumeValue.innerText = vol + '%';
         updateVolumeSliderGradient(vol);
         saveState();
     });
+
+    // ===== 语音测试按钮 =====
+    const testBtn = document.getElementById('tts-test-btn');
+    if (testBtn) {
+        testBtn.addEventListener('click', () => {
+            unlockAudio();
+            speakWithUnlock('语音测试，盲注级别已调整至第5级，小盲一千，大盲两千，前注两千');
+            showToast('🔊 语音测试中...');
+        });
+    }
+
+    // ===== 全局首次交互解锁（兜底方案） =====
+    const unlockOnFirstInteraction = () => {
+        unlockAudio();
+    };
+    document.body.addEventListener('touchstart', unlockOnFirstInteraction, { once: true });
+    document.body.addEventListener('click', unlockOnFirstInteraction, { once: true });
+
+    // 显示/隐藏音频解锁提示
+    updateAudioUnlockTip();
+}
+
+// 更新音频解锁提示的显示状态
+function updateAudioUnlockTip() {
+    const tip = document.getElementById('audio-unlock-tip');
+    if (!tip) return;
+    if (state.audioUnlocked) {
+        tip.style.display = 'none';
+    }
 }
 
 // 更新音量滑块背景渐变
